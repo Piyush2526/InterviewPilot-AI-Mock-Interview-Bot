@@ -5,11 +5,10 @@ import { Loader2 } from "lucide-react";
 import { RolePicker } from "@/components/interview/RolePicker";
 import { InterviewChat } from "@/components/interview/InterviewChat";
 import { ReportCard } from "@/components/interview/ReportCard";
-import { getQuestions, getReport } from "@/lib/interview.functions";
+import { getReport } from "@/lib/interview.functions";
 import type {
   AnswerItem,
   InterviewReport,
-  QuestionItem,
   RoleDef,
 } from "@/lib/interview-roles";
 
@@ -33,7 +32,7 @@ export const Route = createFileRoute("/")({
   component: Index,
 });
 
-type Stage = "pick" | "loading" | "chat" | "grading" | "report";
+type Stage = "pick" | "chat" | "grading" | "report";
 
 function Loading({ label }: { label: string }) {
   return (
@@ -45,27 +44,17 @@ function Loading({ label }: { label: string }) {
 }
 
 function Index() {
-  const fetchQuestions = useServerFn(getQuestions);
   const fetchReport = useServerFn(getReport);
 
   const [stage, setStage] = useState<Stage>("pick");
   const [role, setRole] = useState<RoleDef | null>(null);
-  const [questions, setQuestions] = useState<QuestionItem[]>([]);
   const [report, setReport] = useState<InterviewReport | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const start = async (picked: RoleDef) => {
+  const start = (picked: RoleDef) => {
     setRole(picked);
     setError(null);
-    setStage("loading");
-    try {
-      const qs = await fetchQuestions({ data: { roleId: picked.id } });
-      setQuestions(qs);
-      setStage("chat");
-    } catch {
-      setError("The interviewer couldn't be reached. Please try again.");
-      setStage("pick");
-    }
+    setStage("chat");
   };
 
   const finish = async (answers: AnswerItem[]) => {
@@ -84,7 +73,6 @@ function Index() {
   const restart = () => {
     setStage("pick");
     setRole(null);
-    setQuestions([]);
     setReport(null);
   };
 
@@ -96,9 +84,8 @@ function Index() {
         </div>
       )}
       {stage === "pick" && <RolePicker onSelect={start} />}
-      {stage === "loading" && <Loading label="Preparing your interview questions…" />}
       {stage === "chat" && role && (
-        <InterviewChat key={role.id} role={role} questions={questions} onFinish={finish} />
+        <InterviewChat key={role.id} role={role} onFinish={finish} />
       )}
       {stage === "grading" && <Loading label="Scoring your answers…" />}
       {stage === "report" && role && report && (

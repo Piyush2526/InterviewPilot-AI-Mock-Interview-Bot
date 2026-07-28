@@ -1,10 +1,22 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import { generateInterviewQuestions, gradeInterviewAnswers } from "./interview.server";
+import { nextInterviewerTurn, gradeInterviewAnswers } from "./interview.server";
 
-export const getQuestions = createServerFn({ method: "POST" })
-  .inputValidator((input: unknown) => z.object({ roleId: z.string() }).parse(input))
-  .handler(async ({ data }) => generateInterviewQuestions(data.roleId));
+export const getNextTurn = createServerFn({ method: "POST" })
+  .inputValidator((input: unknown) =>
+    z
+      .object({
+        roleId: z.string(),
+        history: z.array(
+          z.object({ role: z.enum(["assistant", "user"]), content: z.string() }),
+        ),
+        questionNumber: z.number(),
+      })
+      .parse(input),
+  )
+  .handler(async ({ data }) =>
+    nextInterviewerTurn(data.roleId, data.history, data.questionNumber),
+  );
 
 export const getReport = createServerFn({ method: "POST" })
   .inputValidator((input: unknown) =>
