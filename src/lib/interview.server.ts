@@ -1,4 +1,4 @@
-import { generateText, Output, NoObjectGeneratedError } from "ai";
+import { generateText } from "ai";
 import { z } from "zod";
 import { createLovableAiGatewayProvider } from "./ai-gateway.server";
 import { getRole, type AnswerItem, type InterviewReport, type QuestionItem } from "./interview-roles";
@@ -27,21 +27,32 @@ const reportSchema = z.object({
   modelAnswer: z.string(),
 });
 
+function parseJson(text: string): unknown {
+  const cleaned = text.replace(/```json/gi, "```").trim();
+  const fenced = cleaned.match(/```([\s\S]*?)```/);
+  const raw = fenced ? fenced[1] : cleaned;
+  const start = raw.indexOf("{");
+  const end = raw.lastIndexOf("}");
+  return JSON.parse(start >= 0 ? raw.slice(start, end + 1) : raw);
+}
+
 export async function generateInterviewQuestions(roleId: string): Promise<QuestionItem[]> {
   const role = getRole(roleId);
   if (!role) throw new Error("Unknown role");
 
-  const { output } = await generateText({
+  const { text } = await generateText({
     model: gateway()(MODEL),
-    output: Output.object({ schema: questionsSchema }),
     system:
       "You are a senior technical interviewer. Write realistic, concise interview questions. " +
-      "Never ask multi-part compound questions.",
+      "Never ask multi-part compound questions. Reply with raw JSON only, no prose, no code fences.",
     prompt:
       `Generate exactly 5 interview questions for a ${role.title} candidate. ` +
       `Focus areas: ${role.focus}. Mix one warm-up/behavioral question with four technical ones, ordered easy to hard. ` +
-      `Each question must be under 220 characters. For each, set "seconds" to a suggested answer time between 60 and 180.`,
+      `Each question must be under 220 characters. For each, set "seconds" to a suggested answer time between 60 and 180.\n\n` +
+      `Return JSON shaped exactly like: {"questions":[{"question":"...","seconds":120}]}`,
   });
+
+  const output = questionsSchema.parse(parseJson(text));
 
   return output.questions.slice(0, 5).map((q) => ({
     question: q.question,
@@ -67,24 +78,17 @@ export async function gradeInterviewAnswers(
     `Pick the single weakest answer's question as modelAnswerQuestion and write an exemplary answer for it (under 1200 characters). ` +
     `Keep summary under 300 characters. Repeat each question verbatim in perQuestion.`;
 
-  try {
-    const { output } = await generateText({
-      model: gateway()(MODEL),
-      output: Output.object({ schema: reportSchema }),
-      system: "You are a fair but demanding interview coach. Be specific, never generic.",
-      prompt,
-    });
-    return normalize(output, answers);
-  } catch (error) {
-    if (NoObjectGeneratedError.isInstance(error) && error.text) {
-      const match = error.text.match(/\{[\s\S]*\}/);
-      if (match) {
-        const parsed = reportSchema.safeParse(JSON.parse(match[0]));
-        if (parsed.success) return normalize(parsed.data, answers);
-      }
-    }
-    throw error;
-  }
+  const { text } = await generateText({
+    model: gateway()(MODEL),
+    system:
+      "You are a fair but demanding interview coach. Be specific, never generic. " +
+      "Reply with raw JSON only, no prose, no code fences.",
+    prompt:
+      prompt +
+      `\n\nReturn JSON shaped exactly like: {"overallScore":72,"summary":"...","perQuestion":[{"question":"...","score":7,"feedback":"..."}],"strengths":["..."],"weaknesses":["..."],"modelAnswerQuestion":"...","modelAnswer":"..."}`,
+  });
+
+  return normalize(reportSchema.parse(parseJson(text)), answers);
 }
 
 function normalize(data: z.infer<typeof reportSchema>, answers: AnswerItem[]): InterviewReport {
