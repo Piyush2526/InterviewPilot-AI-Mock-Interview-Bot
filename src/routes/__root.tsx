@@ -77,21 +77,25 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "InterviewPilot — AI Mock Interviews" },
+      { title: "InterviewPilot — Timed AI Mock Interviews" },
       {
         name: "description",
         content:
-          "Practice timed mock interviews with an AI interviewer and get a scored report card.",
+          "Pick a role, answer five timed questions from an AI interviewer, and get a scored report card with strengths, gaps and a model answer.",
       },
-      { property: "og:title", content: "InterviewPilot — AI Mock Interviews" },
+      { property: "og:title", content: "InterviewPilot — Timed AI Mock Interviews" },
       {
         property: "og:description",
         content:
-          "Practice timed mock interviews with an AI interviewer and get a scored report card.",
+          "Pick a role, answer five timed questions from an AI interviewer, and get a scored report card with strengths, gaps and a model answer.",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
       { name: "twitter:site", content: "@Lovable" },
+      { name: "twitter:title", content: "InterviewPilot — Timed AI Mock Interviews" },
+      { name: "twitter:description", content: "Pick a role, answer five timed questions from an AI interviewer, and get a scored report card with strengths, gaps and a model answer." },
+      { property: "og:image", content: "https://storage.googleapis.com/gpt-engineer-file-uploads/attachments/og-images/0e96bd5b-786f-456a-b94c-2a410361b6c9" },
+      { name: "twitter:image", content: "https://storage.googleapis.com/gpt-engineer-file-uploads/attachments/og-images/0e96bd5b-786f-456a-b94c-2a410361b6c9" },
     ],
     links: [
       { rel: "preconnect", href: "https://fonts.googleapis.com" },

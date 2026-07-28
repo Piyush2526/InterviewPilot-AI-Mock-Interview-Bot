@@ -25,7 +25,7 @@ export const Route = createFileRoute("/")({
       {
         property: "og:description",
         content:
-          "Pick a role, answer five timed questions from an AI interviewer, and get a scored report card.",
+          "Pick a role, answer five timed questions from an AI interviewer, and get a scored report card with strengths, gaps and a model answer.",
       },
     ],
   }),
