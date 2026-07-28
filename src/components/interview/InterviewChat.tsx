@@ -1,68 +1,93 @@
-import { useEffect, useRef, useState } from "react";
-import { Send, Timer, SkipForward } from "lucide-react";
-import type { QuestionItem, RoleDef, AnswerItem } from "@/lib/interview-roles";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useServerFn } from "@tanstack/react-start";
+import { Send, Timer, SkipForward, Loader2 } from "lucide-react";
+import { getNextTurn } from "@/lib/interview.functions";
+import type { RoleDef, AnswerItem, ChatTurn } from "@/lib/interview-roles";
+
+const TOTAL_QUESTIONS = 5;
+const SECONDS_PER_QUESTION = 150;
 
 function fmt(s: number) {
   const m = Math.floor(s / 60);
   return `${m}:${String(s % 60).padStart(2, "0")}`;
 }
 
-type Bubble = { role: "ai" | "user"; text: string };
+function toAnswers(history: ChatTurn[]): AnswerItem[] {
+  const pairs: AnswerItem[] = [];
+  history.forEach((turn, i) => {
+    if (turn.role !== "user") return;
+    const prev = [...history.slice(0, i)].reverse().find((t) => t.role === "assistant");
+    pairs.push({ question: prev?.content ?? "", answer: turn.content });
+  });
+  return pairs;
+}
 
 export function InterviewChat({
   role,
-  questions,
   onFinish,
 }: {
   role: RoleDef;
-  questions: QuestionItem[];
   onFinish: (answers: AnswerItem[]) => void;
 }) {
-  const [index, setIndex] = useState(0);
-  const [answers, setAnswers] = useState<AnswerItem[]>([]);
+  const askNext = useServerFn(getNextTurn);
+  const [history, setHistory] = useState<ChatTurn[]>([]);
+  const [asked, setAsked] = useState(0);
   const [draft, setDraft] = useState("");
-  const [left, setLeft] = useState(questions[0]?.seconds ?? 120);
-  const [bubbles, setBubbles] = useState<Bubble[]>([
-    {
-      role: "ai",
-      text: `Hi — I'll be your interviewer for the ${role.title} round. Take your time, answer out loud in your head, then type your response. Ready? Here's question 1.`,
-    },
-    { role: "ai", text: questions[0]?.question ?? "" },
-  ]);
+  const [left, setLeft] = useState(SECONDS_PER_QUESTION);
+  const [thinking, setThinking] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   const submitRef = useRef<(text: string) => void>(() => {});
   const draftRef = useRef("");
   draftRef.current = draft;
+  const startedRef = useRef(false);
+
+  const requestTurn = useCallback(
+    async (base: ChatTurn[], questionNumber: number) => {
+      setThinking(true);
+      setError(null);
+      try {
+        const text = await askNext({
+          data: { roleId: role.id, history: base, questionNumber },
+        });
+        setHistory([...base, { role: "assistant", content: text }]);
+        setAsked(questionNumber);
+        setLeft(SECONDS_PER_QUESTION);
+      } catch (e) {
+        console.error("interview turn failed", e);
+        setError("The interviewer didn't respond. Please try again.");
+      } finally {
+        setThinking(false);
+      }
+    },
+    [askNext, role.id],
+  );
+
+  useEffect(() => {
+    if (startedRef.current) return;
+    startedRef.current = true;
+    void requestTurn([], 1);
+  }, [requestTurn]);
 
   const submit = (text: string) => {
-    const current = questions[index];
-    if (!current) return;
-    const next = [...answers, { question: current.question, answer: text }];
-    setAnswers(next);
+    if (thinking || asked === 0) return;
+    const answer = text.trim() || "(no answer given)";
+    const next: ChatTurn[] = [...history, { role: "user", content: answer }];
+    setHistory(next);
     setDraft("");
 
-    if (index + 1 >= questions.length) {
-      setBubbles((b) => [
-        ...b,
-        { role: "user", text: text.trim() || "(skipped)" },
-        { role: "ai", text: "That's the last one. Scoring your interview now…" },
-      ]);
-      onFinish(next);
+    if (asked >= TOTAL_QUESTIONS) {
+      setThinking(true);
+      onFinish(toAnswers(next));
       return;
     }
-
-    const upcoming = questions[index + 1];
-    setBubbles((b) => [
-      ...b,
-      { role: "user", text: text.trim() || "(skipped)" },
-      { role: "ai", text: upcoming.question },
-    ]);
-    setIndex(index + 1);
-    setLeft(upcoming.seconds);
+    void requestTurn(next, asked + 1);
   };
   submitRef.current = submit;
 
   useEffect(() => {
+    if (thinking || asked === 0) return;
     const id = setInterval(() => {
       setLeft((t) => {
         if (t <= 1) {
@@ -73,14 +98,17 @@ export function InterviewChat({
       });
     }, 1000);
     return () => clearInterval(id);
-  }, [index]);
+  }, [asked, thinking]);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [bubbles]);
+  }, [history, thinking]);
 
-  const total = questions[index]?.seconds ?? 1;
-  const pct = Math.max(0, Math.min(100, (left / total) * 100));
+  useEffect(() => {
+    if (!thinking) inputRef.current?.focus();
+  }, [thinking, asked]);
+
+  const pct = Math.max(0, Math.min(100, (left / SECONDS_PER_QUESTION) * 100));
   const low = left <= 15;
 
   return (
@@ -91,8 +119,8 @@ export function InterviewChat({
             {role.title} interview
           </p>
           <h1 className="mt-0.5 text-lg">
-            Question {index + 1}{" "}
-            <span className="text-muted-foreground">of {questions.length}</span>
+            Question {Math.max(1, asked)}{" "}
+            <span className="text-muted-foreground">of {TOTAL_QUESTIONS}</span>
           </h1>
         </div>
         <div className="text-right">
@@ -114,23 +142,34 @@ export function InterviewChat({
       </header>
 
       <div className="mt-5 flex-1 space-y-4 overflow-y-auto pr-1">
-        {bubbles.map((b, i) =>
-          b.role === "ai" ? (
+        {history.map((b, i) =>
+          b.role === "assistant" ? (
             <div key={i} className="flex gap-3">
               <span className="surface-navy mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold">
                 AI
               </span>
-              <p className="max-w-[85%] pt-1 text-[15px] leading-relaxed text-foreground">
-                {b.text}
+              <p className="max-w-[85%] whitespace-pre-wrap pt-1 text-[15px] leading-relaxed text-foreground">
+                {b.content}
               </p>
             </div>
           ) : (
             <div key={i} className="flex justify-end">
               <p className="max-w-[80%] whitespace-pre-wrap rounded-2xl rounded-br-sm bg-primary px-4 py-3 text-[15px] leading-relaxed text-primary-foreground">
-                {b.text}
+                {b.content}
               </p>
             </div>
           ),
+        )}
+        {thinking && (
+          <div className="flex items-center gap-3 text-sm text-muted-foreground">
+            <span className="surface-navy flex size-8 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold">
+              AI
+            </span>
+            <Loader2 className="size-4 animate-spin" /> Thinking…
+          </div>
+        )}
+        {error && (
+          <p className="rounded-md bg-destructive/10 px-4 py-3 text-sm text-destructive">{error}</p>
         )}
         <div ref={endRef} />
       </div>
@@ -146,6 +185,8 @@ export function InterviewChat({
         <textarea
           value={draft}
           autoFocus
+          ref={inputRef}
+          disabled={thinking}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
@@ -163,13 +204,14 @@ export function InterviewChat({
             <button
               type="button"
               onClick={() => submit("")}
-              className="inline-flex items-center gap-1.5 rounded-md px-3 py-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+              disabled={thinking}
+              className="inline-flex items-center gap-1.5 rounded-md px-3 py-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground disabled:opacity-40"
             >
               <SkipForward className="size-3.5" /> Skip
             </button>
             <button
               type="submit"
-              disabled={!draft.trim()}
+              disabled={!draft.trim() || thinking}
               className="inline-flex items-center gap-1.5 rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-40"
             >
               Send <Send className="size-3.5" />
