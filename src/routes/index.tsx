@@ -1,24 +1,109 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { useServerFn } from "@tanstack/react-start";
+import { useState } from "react";
+import { Loader2 } from "lucide-react";
+import { RolePicker } from "@/components/interview/RolePicker";
+import { InterviewChat } from "@/components/interview/InterviewChat";
+import { ReportCard } from "@/components/interview/ReportCard";
+import { getQuestions, getReport } from "@/lib/interview.functions";
+import type {
+  AnswerItem,
+  InterviewReport,
+  QuestionItem,
+  RoleDef,
+} from "@/lib/interview-roles";
 
-// No head() here: the home route inherits title/description/og/twitter from
-// __root.tsx, and ships no og:image so serve-time hosting can inject the
-// project's social preview (explicit og:image or latest screenshot).
 export const Route = createFileRoute("/")({
+  head: () => ({
+    meta: [
+      { title: "InterviewPilot — Timed AI Mock Interviews" },
+      {
+        name: "description",
+        content:
+          "Pick a role, answer five timed questions from an AI interviewer, and get a scored report card with strengths, gaps and a model answer.",
+      },
+      { property: "og:title", content: "InterviewPilot — Timed AI Mock Interviews" },
+      {
+        property: "og:description",
+        content:
+          "Pick a role, answer five timed questions from an AI interviewer, and get a scored report card.",
+      },
+    ],
+  }),
   component: Index,
 });
 
-// IMPORTANT: Replace this placeholder. See ./README.md for routing conventions.
-function Index() {
+type Stage = "pick" | "loading" | "chat" | "grading" | "report";
+
+function Loading({ label }: { label: string }) {
   return (
-    <div
-      className="flex min-h-screen items-center justify-center"
-      style={{ backgroundColor: "#fcfbf8" }}
-    >
-      <img
-        data-lovable-blank-page-placeholder="REMOVE_THIS"
-        src="https://cdn.gpteng.co/blank-app-v1.svg"
-        alt="Your app will live here!"
-      />
+    <div className="flex min-h-screen flex-col items-center justify-center gap-4">
+      <Loader2 className="size-6 animate-spin text-primary" />
+      <p className="text-sm text-muted-foreground">{label}</p>
     </div>
+  );
+}
+
+function Index() {
+  const fetchQuestions = useServerFn(getQuestions);
+  const fetchReport = useServerFn(getReport);
+
+  const [stage, setStage] = useState<Stage>("pick");
+  const [role, setRole] = useState<RoleDef | null>(null);
+  const [questions, setQuestions] = useState<QuestionItem[]>([]);
+  const [report, setReport] = useState<InterviewReport | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const start = async (picked: RoleDef) => {
+    setRole(picked);
+    setError(null);
+    setStage("loading");
+    try {
+      const qs = await fetchQuestions({ data: { roleId: picked.id } });
+      setQuestions(qs);
+      setStage("chat");
+    } catch {
+      setError("The interviewer couldn't be reached. Please try again.");
+      setStage("pick");
+    }
+  };
+
+  const finish = async (answers: AnswerItem[]) => {
+    if (!role) return;
+    setStage("grading");
+    try {
+      const r = await fetchReport({ data: { roleId: role.id, answers } });
+      setReport(r);
+      setStage("report");
+    } catch {
+      setError("Scoring failed. Please run the interview again.");
+      setStage("pick");
+    }
+  };
+
+  const restart = () => {
+    setStage("pick");
+    setRole(null);
+    setQuestions([]);
+    setReport(null);
+  };
+
+  return (
+    <main className="min-h-screen bg-background">
+      {error && stage === "pick" && (
+        <div className="mx-auto max-w-5xl px-6 pt-6">
+          <p className="rounded-md bg-destructive/10 px-4 py-3 text-sm text-destructive">{error}</p>
+        </div>
+      )}
+      {stage === "pick" && <RolePicker onSelect={start} />}
+      {stage === "loading" && <Loading label="Preparing your interview questions…" />}
+      {stage === "chat" && role && (
+        <InterviewChat key={role.id} role={role} questions={questions} onFinish={finish} />
+      )}
+      {stage === "grading" && <Loading label="Scoring your answers…" />}
+      {stage === "report" && role && report && (
+        <ReportCard role={role} report={report} onRestart={restart} />
+      )}
+    </main>
   );
 }
