@@ -69,22 +69,20 @@ export async function nextInterviewerTurn(
   const role = getRole(roleId);
   if (!role) throw new Error("Unknown role");
 
+  const counter =
+    `\n\n## CURRENT STATE\nYou are now asking question ${questionNumber} of 5. ` +
+    (questionNumber === 1
+      ? "Give the brief welcome, then ask question 1."
+      : `Give a one-sentence acknowledgment of the last answer, then ask question ${questionNumber}. No evaluation, no scores.`) +
+    " Output plain text only, no markdown headings.";
+
   const { text } = await generateText({
     model: gateway()(MODEL),
-    system: interviewerSystemPrompt(role.roleName, role.roleContext),
-    messages: [
-      ...history.map((t) => ({ role: t.role, content: t.content }) as const),
-      {
-        role: "system" as const,
-        content:
-          `You are now asking question ${questionNumber} of 5. ` +
-          (questionNumber === 1
-            ? "Give the brief welcome, then ask question 1."
-            : "Give a one-sentence acknowledgment of the last answer, then ask question " +
-              `${questionNumber}. No evaluation, no scores.`) +
-          " Output plain text only, no markdown headings.",
-      },
-    ],
+    system: interviewerSystemPrompt(role.roleName, role.roleContext) + counter,
+    messages:
+      history.length > 0
+        ? history.map((t) => ({ role: t.role, content: t.content }) as const)
+        : [{ role: "user" as const, content: "I'm ready to start the interview." }],
   });
 
   return text.trim();
