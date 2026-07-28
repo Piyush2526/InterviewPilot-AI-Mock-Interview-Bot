@@ -31,6 +31,8 @@ export function InterviewChat({
   ]);
   const endRef = useRef<HTMLDivElement>(null);
   const submitRef = useRef<(text: string) => void>(() => {});
+  const draftRef = useRef("");
+  draftRef.current = draft;
 
   const submit = (text: string) => {
     const current = questions[index];
@@ -72,9 +74,6 @@ export function InterviewChat({
     }, 1000);
     return () => clearInterval(id);
   }, [index]);
-
-  const draftRef = useRef("");
-  draftRef.current = draft;
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
