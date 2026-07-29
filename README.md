@@ -1,3 +1,5 @@
+<img width="1366" height="783" alt="image" src="https://github.com/user-attachments/assets/956fb616-b66f-477f-88e5-2222f52873fd" />
+
 # Welcome to your Lovable project
 
 This project was built with [Lovable](https://lovable.dev).
